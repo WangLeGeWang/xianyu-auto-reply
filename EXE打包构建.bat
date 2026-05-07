@@ -170,6 +170,8 @@ python -m nuitka ^
     --nofollow-import-to=pip ^
     --nofollow-import-to=wheel ^
     --nofollow-import-to=nuitka ^
+    --include-module=tkinter.ttk ^
+    --include-module=tkinter.messagebox ^
     --enable-plugin=tk-inter ^
     --assume-yes-for-downloads launcher\main.py
 
@@ -188,6 +190,13 @@ xcopy /E /I /Y "websocket" "%DIST_DIR%\websocket" >nul
 xcopy /E /I /Y "scheduler" "%DIST_DIR%\scheduler" >nul
 xcopy /E /I /Y "common" "%DIST_DIR%\common" >nul
 xcopy /E /I /Y "frontend\dist" "%DIST_DIR%\frontend\dist" >nul
+
+REM --- Make sure plain .py files in launcher (not Cython-encrypted) are also present in dist ---
+REM --- so cython-built .pyd modules can resolve `from launcher.version import CURRENT_VERSION` ---
+REM --- via launcher.__path__ when Nuitka's frozen finder is bypassed by extension imports. ---
+if not exist "%DIST_DIR%\launcher" mkdir "%DIST_DIR%\launcher" 2>nul
+if exist "launcher\__init__.py" copy /Y "launcher\__init__.py" "%DIST_DIR%\launcher\__init__.py" >nul
+if exist "launcher\version.py" copy /Y "launcher\version.py" "%DIST_DIR%\launcher\version.py" >nul
 
 REM --- Copy promotion module if it exists ---
 if "%HAS_PROMOTION%"=="1" (
@@ -230,16 +239,36 @@ if defined PYTHON_DIR (
     )
 )
 
-REM --- Install Chromium browser into package directory ---
+REM --- Install Chromium first to LOCAL user cache, then copy to dist. ---
+REM --- Strategy: keep PLAYWRIGHT_BROWSERS_PATH unset so `playwright install` ---
+REM --- uses the default LOCALAPPDATA\ms-playwright cache. This way the cache ---
+REM --- persists across rebuilds and the next build can skip the slow CDN download. ---
 set "PACKAGED_BROWSER_DIR=%DIST_DIR%\ms-playwright"
-mkdir "%PACKAGED_BROWSER_DIR%" 2>nul
-set "PLAYWRIGHT_BROWSERS_PATH=%PACKAGED_BROWSER_DIR%"
-echo [INFO] Installing Chromium into package directory...
+set "LOCAL_PW_BROWSERS=%LOCALAPPDATA%\ms-playwright"
+
+REM --- Make sure no stale env var leaks from a previous step ---
+set "PLAYWRIGHT_BROWSERS_PATH="
+
+echo [INFO] Ensuring Chromium is installed in local cache (%LOCAL_PW_BROWSERS%)...
 python -m playwright install chromium
 if errorlevel 1 (
-    echo [ERROR] Failed to install Chromium browser.
+    echo [ERROR] Failed to install Chromium browser into local cache.
     goto :end
 )
+
+if not exist "%LOCAL_PW_BROWSERS%" (
+    echo [ERROR] Local Playwright cache not found after install: %LOCAL_PW_BROWSERS%
+    goto :end
+)
+
+echo [INFO] Copying Playwright browsers from local cache to package directory...
+mkdir "%PACKAGED_BROWSER_DIR%" 2>nul
+xcopy /E /I /Y /Q "%LOCAL_PW_BROWSERS%" "%PACKAGED_BROWSER_DIR%" >nul
+if errorlevel 1 (
+    echo [ERROR] Failed to copy Playwright browsers into package directory.
+    goto :end
+)
+echo [INFO] Playwright browsers ready in: %PACKAGED_BROWSER_DIR%
 
 echo [5/7] Cleaning sensitive and temporary files...
 

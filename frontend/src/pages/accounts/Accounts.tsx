@@ -857,6 +857,7 @@ export function Accounts() {
         a.id === account.id ? { ...a, aiEnabled: newEnabled } : a,
       ))
       addToast({ type: 'success', message: `AI回复已${newEnabled ? '开启' : '关闭'}` })
+      await loadAccounts()
     } catch (error) {
       addToast({ type: 'error', message: getApiErrorMessage(error, '操作失败') })
     }
@@ -1084,6 +1085,7 @@ export function Accounts() {
       ))
       addToast({ type: 'success', message: 'AI设置已保存' })
       closeModal()
+      await loadAccounts()
     } catch (error) {
       const detail = getApiErrorMessage(error, '保存失败')
       addToast({ type: 'error', message: detail })

@@ -15,19 +15,17 @@
 - [一、项目简介](#一项目简介)
 - [二、Python 版本要求](#二python-版本要求重要)
 - [三、部署方式总览](#三部署方式总览)
-- [四、方式一：Docker 一键部署](#四方式一docker-一键部署推荐生产)
-- [五、方式二：Docker 本地源码构建](#五方式二docker-本地源码构建)
-- [六、方式三：Docker 加密源码构建](#六方式三docker-加密源码构建)
-- [七、方式四：本地源码运行](#七方式四本地源码运行开发调试)
-- [八、方式五：Windows EXE 打包](#八方式五windows-exe-打包)
-- [九、推广返佣子系统](#九推广返佣子系统可选模块)
-- [十、环境变量配置说明](#十环境变量配置说明)
-- [十一、常用运维命令](#十一常用运维命令)
-- [十二、数据持久化与备份](#十二数据持久化与备份)
-- [十三、故障排查](#十三故障排查)
-- [十四、安全建议](#十四安全建议)
-- [十五、目录结构参考](#十五目录结构参考)
-- [十六、版本与许可](#十六版本与许可)
+- [四、方式一：Docker 加密源码构建](#四方式一docker-加密源码构建推荐)
+- [五、方式二：本地源码运行](#五方式二本地源码运行开发调试)
+- [六、方式三：Windows EXE 打包](#六方式三windows-exe-打包)
+- [七、推广返佣子系统](#七推广返佣子系统可选模块)
+- [八、环境变量配置说明](#八环境变量配置说明)
+- [九、常用运维命令](#九常用运维命令)
+- [十、数据持久化与备份](#十数据持久化与备份)
+- [十一、故障排查](#十一故障排查)
+- [十二、安全建议](#十二安全建议)
+- [十三、目录结构参考](#十三目录结构参考)
+- [十四、版本与许可](#十四版本与许可)
 
 ---
 
@@ -111,10 +109,10 @@
 
 | 部署方式 | Python 版本 | 说明 |
 | --- | --- | --- |
-| Docker 一键部署（拉取镜像） | **不需要本机 Python** | 全部由容器内 `python:3.11-slim` 提供 |
-| Docker 本地源码构建 | **不需要本机 Python** | 镜像内统一使用 Python 3.11 |
 | Docker 加密源码构建 | **不需要本机 Python** | 镜像内统一使用 Python 3.11 |
-| Windows EXE 打包 | **必须 Python 3.12（且为 64 位）** | 仓库内的 Windows `.pyd` 加密产物为 `cp312-win_amd64`，其它版本无法加载 |
+| 本地源码运行（Windows） | **必须 Python 3.12（64 位）** | 仓库内 `.pyd` 加密产物为 `cp312-win_amd64`，其它版本无法加载 |
+| 本地源码运行（Linux） | **必须 Python 3.11** | 仓库内 `.so` 加密产物为 `cpython-311-x86_64-linux-gnu`，其它版本无法加载 |
+| Windows EXE 打包 | **必须 Python 3.12（且为 64 位）** | 同上，打包时需加载 `.pyd` |
 | Windows EXE 运行 | **无需安装 Python** | 打包脚本会把 `python.exe` 与 `Lib` 一起带入发布包 |
 
 > **特别提醒**：Linux 容器使用的 `.so` 文件名是 `cpython-311-x86_64-linux-gnu.so`，因此 **Linux 容器内的 Python 必须是 3.11**。Dockerfile 已锁定 `python:3.11-slim`，请勿擅自升级到 3.12。
@@ -138,153 +136,21 @@ python3 --version
 
 ## 三、部署方式总览
 
-本项目提供 **5 种部署/运行方式**，请根据使用场景选择：
+本项目提供 **3 种部署/运行方式**，请根据使用场景选择：
 
-| 方式 | 适用场景 | 入口脚本 | Compose 文件 |
-| --- | --- | --- | --- |
-| 方式一：Docker 一键部署 | 生产环境，直接拉取镜像运行 | `deploy.sh` | `docker-compose.yml`（脚本自动生成） |
-| 方式二：Docker 本地源码构建 | 开发调试，明文源码运行 | `build_local.sh` | `docker-compose.local.yml` |
-| 方式三：Docker 加密源码构建 | 私有部署，需对源码加密 | `xy-update.zhinianboke.com/deploy_enc.sh` / `build_enc_docker.sh` | `docker-compose.enc.yml` |
-| 方式四：本地源码运行 | 本地开发调试，不依赖 Docker | 各服务 `main.py` | 无（直接运行） |
-| 方式五：Windows EXE 打包 | Windows 单机离线分发 | `EXE打包构建.bat` | 无（直接运行 EXE） |
-
----
-
-## 四、方式一：Docker 一键部署（推荐生产）
-
-### 4.1 服务器环境要求
-
-| 项目 | 要求 |
-| --- | --- |
-| 操作系统 | Linux 64 位（推荐 CentOS 7+ / Ubuntu 20.04+） |
-| CPU / 内存 | 至少 2 核 4 GB（推荐 4 核 8 GB） |
-| 磁盘 | 至少 20 GB 可用空间（含镜像、日志、数据库） |
-| Docker | `>= 20.10`，建议 `>= 24.0` |
-| Docker Compose | 内置 `docker compose` 插件，或独立 `docker-compose >= 1.29` |
-| 网络 | 可访问 `registry.cn-shanghai.aliyuncs.com`（用于拉取镜像） |
-| 开放端口 | 默认对外开放 `9000`（前端），其它端口仅内网或本机访问 |
-
-### 4.2 安装 Docker（如未安装）
-
-```bash
-# CentOS / Rocky / Alma
-curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
-systemctl enable --now docker
-
-# Ubuntu / Debian
-curl -fsSL https://get.docker.com | bash
-systemctl enable --now docker
-
-# 验证
-docker --version
-docker compose version
-```
-
-### 4.3 部署步骤
-
-将本仓库（或仅 `deploy.sh` 单个脚本）上传至服务器后执行：
-
-```bash
-# 1. 进入项目目录
-cd /opt/xianyu-auto-reply
-
-# 2. 赋予执行权限
-chmod +x deploy.sh
-
-# 3. 一键部署（自动生成 .env、docker-compose.yml，并拉取镜像启动）
-bash deploy.sh
-```
-
-脚本会按以下顺序自动完成：
-
-1. **检查 Docker / Compose 环境**
-2. **首次执行时生成 `.env` 默认配置**（仅首次，后续不会覆盖）
-3. **生成 `docker-compose.yml`**
-4. **停止旧容器（仅本项目）**
-5. **拉取最新镜像**
-6. **启动所有服务**
-
-部署成功后访问：
-
-```
-http://<服务器IP>:9000
-```
-
-### 4.4 修改默认配置（**强烈建议**）
-
-首次执行 `deploy.sh` 后，仓库目录下会生成 `.env` 文件。**部署到生产环境前**，请务必修改以下默认值：
-
-```bash
-vi .env
-```
-
-需要重点修改的字段：
-
-| 字段 | 默认值 | 修改建议 |
+| 方式 | 适用场景 | 入口 |
 | --- | --- | --- |
-| `MYSQL_ROOT_PASSWORD` | `xianyu@2026` | 改为 16 位以上随机强密码 |
-| `MYSQL_PASSWORD` | `xianyu@2026` | 同上，且与 root 不同 |
-| `REDIS_PASSWORD` | `xianyu@2026` | 改为 16 位以上随机强密码 |
-| `JWT_SECRET_KEY` | `change-me-in-production-please` | **必改**，建议 32 位以上随机字符串 |
-| `FRONTEND_PORT` | `9000` | 如端口冲突可调整 |
-| `IMAGE_TAG` | `latest` | 生产建议锁定具体版本号 |
-
-修改完成后重新执行 `bash deploy.sh` 即可生效。
-
-> **注意**：如果数据库已经初始化过，再修改 `MYSQL_PASSWORD` 不会自动生效，需要先删除 `mysql_data` 卷（会丢数据）或进入容器手动改密。请在首次部署前就改好。
-
-### 4.5 升级版本
-
-直接重新执行：
-
-```bash
-bash deploy.sh
-```
-
-脚本会自动 `pull` 最新镜像并重启，数据库与 Redis 数据由 Docker 卷持久化，不会丢失。
+| 方式一：Docker 加密源码构建 | 生产/私有部署，源码加密 | 远程一键脚本 |
+| 方式二：本地源码运行 | 本地开发调试，不依赖 Docker | 各服务 `main.py` / `启动.bat` |
+| 方式三：Windows EXE 打包 | Windows 单机离线分发 | `EXE打包构建.bat` |
 
 ---
 
-## 五、方式二：Docker 本地源码构建
-
-适用于开发调试场景，**直接基于本地源码**构建镜像（不进行 Cython 加密）。
-
-### 5.1 前置条件
-
-| 项目 | 要求 |
-| --- | --- |
-| Docker | `>= 20.10` |
-| Docker Compose | `>= 1.29` |
-| Node.js | 前端构建在镜像内完成，宿主机**无需**安装 |
-| Python | 镜像内使用 3.11，宿主机**无需**安装 |
-
-### 5.2 部署步骤
-
-```bash
-chmod +x build_local.sh
-
-# 重新构建并启动
-bash build_local.sh rebuild
-
-# 其它常用命令
-bash build_local.sh start     # 启动
-bash build_local.sh stop      # 停止
-bash build_local.sh restart   # 重启
-bash build_local.sh logs      # 查看日志
-bash build_local.sh status    # 查看状态
-```
-
-`rebuild` 命令会：清理旧容器 → 基于本地源码构建镜像 → 启动服务。
-
-> 该方式使用 `docker-compose.local.yml` 与各服务的 `Dockerfile.local`，**镜像内包含明文 Python 源码**，仅适合内部开发，不建议用于生产。
-
----
-
-## 六、方式三：Docker 加密源码构建
+## 四、方式一：Docker 加密源码构建（推荐）
 
 适用于私有部署、源码不便外发的场景，构建过程会对 Python 源码进行 **Cython 编译**，最终镜像内只保留 `.so` 二进制。
 
-### 6.1 前置条件
+### 4.1 前置条件
 
 | 项目 | 要求 |
 | --- | --- |
@@ -293,9 +159,9 @@ bash build_local.sh status    # 查看状态
 | 磁盘 | 至少 30 GB（编译过程占用较高） |
 | 内存 | 建议 8 GB 以上（Cython 编译比较吃内存） |
 
-### 6.2 部署步骤
+### 4.2 部署步骤
 
-#### 6.2.1 服务器一键部署（推荐）
+#### 4.2.1 服务器一键部署（推荐）
 
 服务器已安装 Docker 与 Docker Compose 后，直接执行加密版一键部署脚本即可：
 
@@ -305,41 +171,30 @@ curl -fsSL https://xy-update.zhinianboke.com/deploy_enc.sh | sed 's/\r$//' | bas
 
 该脚本会自动完成加密版部署所需的配置生成、镜像构建、旧容器清理与服务启动。
 
-#### 6.2.2 使用仓库内脚本部署
 
+更新版本，直接执行加密版一键更新脚本即可：
 ```bash
-chmod +x build_enc_docker.sh
-
-# 重新构建并启动（带源码加密）
-bash build_enc_docker.sh rebuild
+curl -fsSL https://xy-update.zhinianboke.com/update_enc.sh | sed 's/\r$//' | bash
 ```
 
-构建过程会自动执行：
-
-1. 在 `builder` 阶段安装 Cython 与项目依赖
-2. 将 `common/`、`backend-web/app/`、`backend-web/_bootstrap.py`、`launcher/_bootstrap.py` 等编译为 `.so`
-3. 删除中间产物（`.pyc`、`pyproject.toml`、`scripts/` 等）
-4. 在最终镜像阶段只复制编译后的二进制与运行时依赖
-
-构建后镜像中**没有可读的 Python 业务源码**，只能看到入口桩文件（`main.py`、`__init__.py` 等）。
 
 ---
 
-## 七、方式四：本地源码运行（开发调试）
+## 五、方式二：本地源码运行（开发调试）
 
 适用于本地开发调试场景，不依赖 Docker，直接在本机运行各服务。
 
-### 7.1 环境要求
+### 5.1 环境要求
 
 | 项目 | 要求 | 说明 |
 |------|------|------|
-| Python | `>= 3.11`（推荐 3.11） | 后端三个服务均需要 |
+| Python | Windows: **3.12**；Linux: **3.11** | 仓库内加密产物按平台锁定版本，不可混用 |
 | Node.js | `>= 18`（带 `npm`） | 前端构建与开发 |
 | MySQL | `8.0` | 需提前安装并启动 |
 | Redis | `7.x` | 需提前安装并启动 |
 | Playwright | 自动安装 | 首次运行需下载 Chromium |
 
-### 7.2 准备数据库与 Redis
+### 5.2 准备数据库与 Redis
 
 ```sql
 -- 登录 MySQL 创建数据库
@@ -348,7 +203,7 @@ CREATE DATABASE xianyu_data CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 确保 Redis 服务已启动，记下端口和密码。
 
-### 7.3 配置环境变量
+### 5.3 配置环境变量
 
 每个服务目录下都有 `.env.example`，复制为 `.env` 并修改：
 
@@ -371,7 +226,7 @@ Copy-Item scheduler\.env.example scheduler\.env
 | `REDIS_PASSWORD` | Redis 密码（无密码留空） |
 | `JWT_SECRET_KEY` | JWT 密钥，建议改为随机字符串 |
 
-### 7.4 安装依赖
+### 5.4 安装依赖
 
 ```powershell
 # 后端依赖（三个服务分别安装）
@@ -388,7 +243,7 @@ cd frontend; npm install; cd ..
 
 > 建议使用虚拟环境（`python -m venv .venv`）隔离依赖，避免污染全局 Python 环境。
 
-### 7.5 启动服务
+### 5.5 启动服务
 
 需要同时运行 **4 个进程**（后端 3 个 + 前端 1 个），建议使用 4 个终端窗口：
 
@@ -416,7 +271,7 @@ npm run dev
 http://localhost:9000
 ```
 
-### 7.6 Windows 快捷启动
+### 5.6 Windows 快捷启动
 
 各服务目录下提供了 `启动.bat` 和 `停止.bat` 脚本，双击即可快速启停：
 
@@ -428,7 +283,7 @@ scheduler/启动.bat      # 启动 Scheduler
 frontend/启动.bat       # 启动前端
 ```
 
-### 7.7 注意事项
+### 5.7 注意事项
 
 - 前端开发服务器（`npm run dev`）会自动将 `/api` 请求代理到 `localhost:8089`，无需额外配置
 - 三个后端服务的 `.env` 中数据库和 Redis 配置必须一致
@@ -437,11 +292,11 @@ frontend/启动.bat       # 启动前端
 
 ---
 
-## 八、方式五：Windows EXE 打包
+## 六、方式三：Windows EXE 打包
 
 适用于 Windows 单机离线分发的场景，将整个系统打包成一个独立可执行目录。
 
-### 8.1 打包机环境要求
+### 6.1 打包机环境要求
 
 | 项目 | 要求 | 备注 |
 | --- | --- | --- |
@@ -452,7 +307,7 @@ frontend/启动.bat       # 启动前端
 | 磁盘 | 至少 15 GB 空闲 | Nuitka 编译与 Chromium 下载需要较大空间 |
 | 网络 | 可访问 PyPI 与 Playwright 官方源 | 用于安装依赖与下载 Chromium |
 
-### 8.2 安装 Python 3.12 的注意事项
+### 6.2 安装 Python 3.12 的注意事项
 
 1. 从 [python.org](https://www.python.org/downloads/release/python-3120/) 下载 **Windows installer (64-bit)**。
 2. 安装时勾选 `Add python.exe to PATH`。
@@ -467,7 +322,7 @@ python -c "import platform; print(platform.architecture())"
 # 必须输出：('64bit', 'WindowsPE')
 ```
 
-### 8.3 安装项目依赖（打包前）
+### 6.3 安装项目依赖（打包前）
 
 EXE 打包脚本会调用 `python -m playwright install chromium`，因此需要先在打包机上安装项目依赖：
 
@@ -488,7 +343,7 @@ python -m pip install fastapi "uvicorn[standard]" sqlalchemy asyncmy pymysql `
 
 > 项目使用 `pyproject.toml` 管理依赖，未提供 `requirements.txt`。上面的命令覆盖了打包脚本所需的全部第三方包。
 
-### 8.4 一键打包
+### 6.4 一键打包
 
 ```powershell
 # 在仓库根目录双击或在 PowerShell 中执行
@@ -505,7 +360,7 @@ python -m pip install fastapi "uvicorn[standard]" sqlalchemy asyncmy pymysql `
 6. 生成 `release/XianyuAutoReply/` 目录
 7. 压缩成 `release/app-v<版本号>.zip`
 
-### 8.5 运行 EXE
+### 6.5 运行 EXE
 
 ```text
 release\XianyuAutoReply\XianyuAutoReply.exe
@@ -517,18 +372,18 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 
 ---
 
-## 九、推广返佣子系统（可选模块）
+## 七、推广返佣子系统（可选模块）
 
 推广返佣子系统是一个独立的可选模块，用于淘宝联盟推广和分销管理。当 `promotion/` 目录存在时，Docker 部署会自动启用该模块。
 
-### 9.1 服务端口
+### 7.1 服务端口
 
 | 服务 | 默认端口 | 说明 |
 |------|----------|------|
 | 推广后端 | `8092` | 推广返佣 API 服务 |
 | 推广前端 | 随主前端部署 | 通过主前端 Nginx 代理访问 |
 
-### 9.2 环境变量
+### 7.2 环境变量
 
 推广后端使用独立的 `.env` 文件（`promotion/backend/.env`），关键变量：
 
@@ -539,7 +394,7 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 | `MYSQL_DATABASE` | `xianyu_data` | 共享主业务数据库 |
 | `JWT_SECRET_KEY` | `change-me` | **生产环境必改** |
 
-### 9.3 功能模块
+### 7.3 功能模块
 
 - **淘宝联盟**：推广商品搜索、推广规则管理
 - **素材管理**：推广素材的增删改查
@@ -549,11 +404,11 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 
 ---
 
-## 十、环境变量配置说明
+## 八、环境变量配置说明
 
 部署方式一/二/三均使用根目录的 `.env` 文件，关键变量如下：
 
-### 10.1 数据库与缓存
+### 8.1 数据库与缓存
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -564,7 +419,7 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 | `REDIS_PASSWORD` | `xianyu@2026` | Redis 密码 |
 | `REDIS_DB` | `0` | Redis 数据库编号 |
 
-### 10.2 安全相关
+### 8.2 安全相关
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -572,7 +427,7 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` | 访问令牌过期时间（分钟） |
 | `REFRESH_TOKEN_EXPIRE_MINUTES` | `10080` | 刷新令牌过期时间（分钟） |
 
-### 10.3 端口与镜像
+### 8.3 端口与镜像
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -583,7 +438,7 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 | `IMAGE_REGISTRY` | `registry.cn-shanghai.aliyuncs.com/zhinian-software` | 镜像仓库地址 |
 | `IMAGE_TAG` | `latest` | 镜像版本标签 |
 
-### 10.4 业务参数
+### 8.4 业务参数
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -592,7 +447,7 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 | `RATE_INTERVAL` | `20` | 限流统计间隔（分钟） |
 | `MAX_CAPTCHA_CONCURRENT` | `3` | 验证码识别最大并发数 |
 
-### 10.5 前端环境变量
+### 8.5 前端环境变量
 
 前端使用独立的环境变量文件，位于 `frontend/` 目录下：
 
@@ -605,7 +460,7 @@ EXE 启动器会自动拉起 `backend-web`、`websocket`、`scheduler` 三个服
 
 ---
 
-## 十一、常用运维命令
+## 九、常用运维命令
 
 以下命令在仓库根目录执行，假设使用 `docker compose` 插件，若使用独立的 `docker-compose` 命令请自行替换。
 
@@ -635,7 +490,7 @@ docker stats --no-stream
 
 ---
 
-## 十二、数据持久化与备份
+## 十、数据持久化与备份
 
 Docker 部署使用以下命名卷持久化数据：
 
@@ -649,7 +504,7 @@ Docker 部署使用以下命名卷持久化数据：
 | `static-files` | 上传的静态文件（图片、二维码等） |
 | `browser_data` | Playwright 浏览器配置 |
 
-### 12.1 备份 MySQL
+### 10.1 备份 MySQL
 
 ```bash
 # 导出
@@ -662,7 +517,7 @@ docker exec -i xianyu-mysql sh -c \
   'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" xianyu_data' < backup_xxx.sql
 ```
 
-### 12.2 备份静态文件
+### 10.2 备份静态文件
 
 ```bash
 docker run --rm \
@@ -673,9 +528,9 @@ docker run --rm \
 
 ---
 
-## 十三、故障排查
+## 十一、故障排查
 
-### 13.1 容器启动失败
+### 11.1 容器启动失败
 
 ```bash
 # 查看启动失败原因
@@ -694,20 +549,21 @@ docker ps -a | grep xianyu
 | `backend-web` 报 `Connection refused` | MySQL/Redis 还未启动完成，等 `start_period` 后再观察 |
 | `websocket` 浏览器初始化失败 | Chromium 未安装、容器内存不足 |
 
-### 13.2 端口冲突
+### 11.2 端口冲突
 
 修改 `.env` 中对应端口后重新部署：
 
 ```bash
 sed -i 's/FRONTEND_PORT=9000/FRONTEND_PORT=9100/' .env
-bash deploy.sh
+# 重新执行一键部署脚本
+curl -fsSL https://xy-update.zhinianboke.com/deploy_enc.sh | sed 's/\r$//' | bash
 ```
 
-### 13.3 镜像拉取失败
+### 11.3 镜像拉取失败
 
-如果服务器无法访问阿里云镜像仓库，可改为方式二/三的本地构建。
+如果服务器无法访问阿里云镜像仓库，可改为方式二（本地源码运行）。
 
-### 13.4 EXE 打包失败
+### 11.4 EXE 打包失败
 
 | 报错信息 | 解决方案 |
 | --- | --- |
@@ -719,7 +575,7 @@ bash deploy.sh
 
 ---
 
-## 十四、安全建议
+## 十二、安全建议
 
 部署到公网前，请务必完成以下检查：
 
@@ -728,29 +584,20 @@ bash deploy.sh
 3. **修改默认管理员密码**：首次登录后立即修改 `admin` 账号密码。
 4. **限制端口暴露**：仅对外暴露 `9000`，`8089`/`8090`/`8091` 建议仅在内网可访问。
 5. **启用 HTTPS**：建议在 `frontend` 前面加一层 Nginx 反向代理，配置 SSL 证书。
-6. **定期备份**：参考第十二节，建议每日备份 MySQL，每周备份静态文件。
+6. **定期备份**：参考第十节，建议每日备份 MySQL，每周备份静态文件。
 7. **关闭多余防火墙端口**：仅放行 80/443/9000，`3306`/`6379` 严禁对公网开放。
-8. **及时更新镜像**：定期执行 `bash deploy.sh` 拉取最新版本。
+8. **及时更新镜像**：定期执行一键部署脚本拉取最新版本。
 
 ---
 
-## 十五、目录结构参考
+## 十三、目录结构参考
 
 ```
 xianyu-auto-reply/
 ├── README.md                       # 本文档
-├── deploy.sh                       # 一键部署脚本（方式一）
-├── deploy_enc.sh                   # 加密版一键部署脚本
-├── build_local.sh                  # 本地源码构建（方式二）
-├── build_enc_docker.sh             # 加密源码构建（方式三）
-├── build_enc.sh                    # [已废弃] 加密构建脚本
-├── build_scheduler.sh              # 单独构建 Scheduler 服务
-├── build_websocket.sh              # 单独构建 WebSocket 服务
-├── EXE打包构建.bat                 # Windows EXE 打包（方式四）
-├── docker-compose.yml              # 由 deploy.sh 自动生成
-├── docker-compose.local.yml        # 本地源码构建编排
-├── docker-compose.enc.yml          # 加密源码构建编排
-├── .env                            # 环境变量（首次部署自动生成）
+├── EXE打包构建.bat                 # Windows EXE 打包（方式三）
+├── 启动.bat                        # 一键启动所有服务
+├── 停止.bat                        # 一键停止所有服务
 ├── backend-web/                    # 主业务后端（FastAPI）
 │   ├── Dockerfile                  # 加密版镜像（多阶段 Cython 编译）
 │   ├── Dockerfile.local            # 源码版镜像
@@ -809,7 +656,7 @@ xianyu-auto-reply/
 
 ---
 
-## 十六、版本与许可
+## 十四、版本与许可
 
 - 当前版本：见 `launcher/version.py` 中的 `CURRENT_VERSION`。
 - 许可：内部使用，请勿外传。
